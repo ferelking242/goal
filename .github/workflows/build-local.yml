@@ -42,11 +42,16 @@ jobs:
       - name: Expo Prebuild (generate Android project)
         working-directory: artifacts/goal
         env:
+          CI: '1'
           NODE_ENV: production
           EXPO_PUBLIC_SUPABASE_URL: "https://ucyrvqdxwgpwxjehwldh.supabase.co"
           EXPO_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjeXJ2cWR4d2dwd3hqZWh3bGRoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3OTQ2MzIsImV4cCI6MjA4OTM3MDYzMn0.2nnrivN1dW3fSuMyK2mG-qpATkt7EFEWTZtSlL9dxhs"
           EXPO_PUBLIC_API_FOOTBALL_KEY: "c326a6776b69e74c7d8734e5cd38521e"
-        run: npx expo prebuild --platform android --clean
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Install Android dependencies after prebuild
+        working-directory: artifacts/goal
+        run: pnpm install --no-frozen-lockfile
 
       - name: Generate signing keystore
         working-directory: artifacts/goal/android
@@ -58,7 +63,7 @@ jobs:
             -storepass android123 -keypass android123 \
             -dname "CN=GOAL,O=GOAL,L=FR,S=FR,C=FR"
 
-      - name: Configure signing
+      - name: Configure signing in gradle.properties
         working-directory: artifacts/goal/android
         run: |
           cat >> gradle.properties << 'EOF'
@@ -67,11 +72,15 @@ jobs:
           MYAPP_RELEASE_STORE_PASSWORD=android123
           MYAPP_RELEASE_KEY_PASSWORD=android123
           EOF
-          # Inject signingConfig into app/build.gradle
+
+      - name: Inject signing config into app/build.gradle
+        working-directory: artifacts/goal/android
+        run: |
           node -e "
             const fs = require('fs');
             let gradle = fs.readFileSync('app/build.gradle', 'utf8');
-            const signingBlock = \`
+            if (!gradle.includes('signingConfigs')) {
+              const signingBlock = \`
               signingConfigs {
                   release {
                       storeFile file(MYAPP_RELEASE_STORE_FILE)
@@ -80,12 +89,8 @@ jobs:
                       keyPassword MYAPP_RELEASE_KEY_PASSWORD
                   }
               }\`;
-            if (!gradle.includes('signingConfigs')) {
               gradle = gradle.replace('buildTypes {', signingBlock + '\n    buildTypes {');
-              gradle = gradle.replace(
-                /release\s*\{([^}]*?)\}/s,
-                (match) => match.includes('signingConfig') ? match : match.replace('{', '{\n            signingConfig signingConfigs.release')
-              );
+              gradle = gradle.replace(/release \{/, 'release {\n            signingConfig signingConfigs.release');
               fs.writeFileSync('app/build.gradle', gradle);
               console.log('Signing config injected');
             } else {
