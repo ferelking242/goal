@@ -1,0 +1,80 @@
+name: EAS Build & GitHub Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build Android APK & Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.26.1'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Expo & EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build Android APK (EAS preview)
+        id: eas_build
+        working-directory: artifacts/goal
+        run: |
+          BUILD_JSON=$(eas build \
+            --platform android \
+            --profile preview \
+            --non-interactive \
+            --json \
+            2>/dev/null | tail -1)
+          BUILD_URL=$(echo "$BUILD_JSON" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); console.log(d[0]?.artifacts?.buildUrl ?? '')")
+          BUILD_ID=$(echo "$BUILD_JSON"  | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); console.log(d[0]?.id ?? '')")
+          echo "build_url=$BUILD_URL"   >> $GITHUB_OUTPUT
+          echo "build_id=$BUILD_ID"     >> $GITHUB_OUTPUT
+          echo "Build URL: $BUILD_URL"
+
+      - name: Download APK
+        run: |
+          curl -L "${{ steps.eas_build.outputs.build_url }}" -o goal-v${{ github.run_number }}.apk
+          ls -lh goal-v${{ github.run_number }}.apk
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "## GOAL v${{ github.run_number }}" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "### Changements" >> $GITHUB_OUTPUT
+          git log --oneline -10 --pretty=format:"- %s" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: "GOAL v${{ github.run_number }}"
+          body: ${{ steps.release_notes.outputs.notes }}
+          files: goal-v${{ github.run_number }}.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

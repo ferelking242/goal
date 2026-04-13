@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "GOAL",
+    "slug": "goal",
+    "owner": "ferelking",
+    "android": {
+      "package": "com.goal.app"
+    },
+    "ios": {
+      "bundleIdentifier": "com.goal.app"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "0e92bdd4-4644-4e93-b65c-e169bb0726dc"
+      }
+    }
+  }
+}
