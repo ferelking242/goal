@@ -39,25 +39,37 @@ jobs:
         id: eas_build
         working-directory: artifacts/goal
         run: |
+          # Capture full JSON output to file, show progress on stderr
           eas build \
             --platform android \
             --profile preview \
             --non-interactive \
             --json \
-            --output /tmp/eas-build.json \
-            2>&1 | tee /tmp/eas-build.log
+            > /tmp/eas-build.json \
+            2>&1
           
-          # Parse JSON output file written by --output flag
-          if [ -f /tmp/eas-build.json ]; then
-            BUILD_URL=$(node -e "const d=JSON.parse(require('fs').readFileSync('/tmp/eas-build.json','utf8')); const b=Array.isArray(d)?d[0]:d; console.log(b?.artifacts?.buildUrl ?? b?.url ?? '')")
-            BUILD_ID=$(node -e "const d=JSON.parse(require('fs').readFileSync('/tmp/eas-build.json','utf8')); const b=Array.isArray(d)?d[0]:d; console.log(b?.id ?? '')")
-          else
-            echo "No JSON output file, trying to parse stdout log..."
-            # Fallback: find JSON in the build log
-            BUILD_JSON=$(grep -o '\[{.*}\]' /tmp/eas-build.log | tail -1 || echo '[]')
-            BUILD_URL=$(echo "$BUILD_JSON" | node -e "process.stdin.resume(); let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{try{const p=JSON.parse(d);console.log(p[0]?.artifacts?.buildUrl??'')}catch{console.log('')}})")
-            BUILD_ID=$(echo "$BUILD_JSON" | node -e "process.stdin.resume(); let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{try{const p=JSON.parse(d);console.log(p[0]?.id??'')}catch{console.log('')}})")
-          fi
+          echo "=== EAS Build output ==="
+          cat /tmp/eas-build.json
+          echo "========================"
+          
+          # Parse the JSON (handles both array and object formats)
+          BUILD_URL=$(node -e "
+            const raw = require('fs').readFileSync('/tmp/eas-build.json', 'utf8');
+            // Find JSON portion (strip any non-JSON prefix lines)
+            const jsonMatch = raw.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
+            if (!jsonMatch) { console.log(''); process.exit(0); }
+            const d = JSON.parse(jsonMatch[0]);
+            const b = Array.isArray(d) ? d[0] : d;
+            console.log(b?.artifacts?.buildUrl || b?.buildUrl || '');
+          ")
+          BUILD_ID=$(node -e "
+            const raw = require('fs').readFileSync('/tmp/eas-build.json', 'utf8');
+            const jsonMatch = raw.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
+            if (!jsonMatch) { console.log(''); process.exit(0); }
+            const d = JSON.parse(jsonMatch[0]);
+            const b = Array.isArray(d) ? d[0] : d;
+            console.log(b?.id || '');
+          ")
           
           echo "Build URL: $BUILD_URL"
           echo "Build ID:  $BUILD_ID"
@@ -68,9 +80,10 @@ jobs:
         run: |
           APK_URL="${{ steps.eas_build.outputs.build_url }}"
           if [ -z "$APK_URL" ]; then
-            echo "No build URL found, checking EAS dashboard..."
+            echo "ERROR: No build URL found in EAS output!"
             exit 1
           fi
+          echo "Downloading APK from: $APK_URL"
           curl -L "$APK_URL" -o goal-v${{ github.run_number }}.apk
           ls -lh goal-v${{ github.run_number }}.apk
 
