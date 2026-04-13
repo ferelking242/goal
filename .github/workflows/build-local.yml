@@ -1,0 +1,134 @@
+name: Local Android Build (No EAS)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build Android APK Locally
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.26.1'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Expo Prebuild (generate Android project)
+        working-directory: artifacts/goal
+        env:
+          NODE_ENV: production
+          EXPO_PUBLIC_SUPABASE_URL: "https://ucyrvqdxwgpwxjehwldh.supabase.co"
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjeXJ2cWR4d2dwd3hqZWh3bGRoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3OTQ2MzIsImV4cCI6MjA4OTM3MDYzMn0.2nnrivN1dW3fSuMyK2mG-qpATkt7EFEWTZtSlL9dxhs"
+          EXPO_PUBLIC_API_FOOTBALL_KEY: "c326a6776b69e74c7d8734e5cd38521e"
+        run: npx expo prebuild --platform android --clean
+
+      - name: Generate signing keystore
+        working-directory: artifacts/goal/android
+        run: |
+          keytool -genkeypair -v \
+            -keystore release.keystore \
+            -alias release \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android123 -keypass android123 \
+            -dname "CN=GOAL,O=GOAL,L=FR,S=FR,C=FR"
+
+      - name: Configure signing
+        working-directory: artifacts/goal/android
+        run: |
+          cat >> gradle.properties << 'EOF'
+          MYAPP_RELEASE_STORE_FILE=release.keystore
+          MYAPP_RELEASE_KEY_ALIAS=release
+          MYAPP_RELEASE_STORE_PASSWORD=android123
+          MYAPP_RELEASE_KEY_PASSWORD=android123
+          EOF
+          # Inject signingConfig into app/build.gradle
+          node -e "
+            const fs = require('fs');
+            let gradle = fs.readFileSync('app/build.gradle', 'utf8');
+            const signingBlock = \`
+              signingConfigs {
+                  release {
+                      storeFile file(MYAPP_RELEASE_STORE_FILE)
+                      storePassword MYAPP_RELEASE_STORE_PASSWORD
+                      keyAlias MYAPP_RELEASE_KEY_ALIAS
+                      keyPassword MYAPP_RELEASE_KEY_PASSWORD
+                  }
+              }\`;
+            if (!gradle.includes('signingConfigs')) {
+              gradle = gradle.replace('buildTypes {', signingBlock + '\n    buildTypes {');
+              gradle = gradle.replace(
+                /release\s*\{([^}]*?)\}/s,
+                (match) => match.includes('signingConfig') ? match : match.replace('{', '{\n            signingConfig signingConfigs.release')
+              );
+              fs.writeFileSync('app/build.gradle', gradle);
+              console.log('Signing config injected');
+            } else {
+              console.log('Signing config already present');
+            }
+          "
+
+      - name: Build Release APK
+        working-directory: artifacts/goal/android
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m"
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Rename APK
+        run: |
+          cp artifacts/goal/android/app/build/outputs/apk/release/app-release.apk \
+             goal-local-v${{ github.run_number }}.apk
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          {
+            echo "notes<<EOF"
+            echo "## GOAL Local Build v${{ github.run_number }}"
+            echo ""
+            echo "Build compilé directement sur GitHub Actions (sans EAS)."
+            echo ""
+            echo "### Changements"
+            git log --oneline -10 --pretty=format:"- %s"
+            echo ""
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: local-v${{ github.run_number }}
+          name: "GOAL Local Build v${{ github.run_number }}"
+          body: ${{ steps.release_notes.outputs.notes }}
+          files: goal-local-v${{ github.run_number }}.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
