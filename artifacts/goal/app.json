@@ -56,11 +56,13 @@
             "minSdkVersion": 24,
             "enableProguardInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
-            "abiFilters": ["arm64-v8a"],
-            "extraProguardRules": "-keep class expo.modules.kotlin.** { *; }\n-keep class expo.modules.filesystem.** { *; }"
+            "abiFilters": [
+              "arm64-v8a"
+            ]
           }
         }
-      ]
+      ],
+      "./plugins/withProguardRules"
     ],
     "experiments": {
       "typedRoutes": true,
