@@ -1,10 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
+  Animated,
+  Dimensions,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,9 +18,56 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Path, Polygon } from 'react-native-svg';
 import { GoalLogo } from '@/components/GoalLogo';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+
+const { width: W, height: H } = Dimensions.get('window');
+
+function FloatingBall({ delay, startX, size, duration }: { delay: number; startX: number; size: number; duration: number }) {
+  const y = useRef(new Animated.Value(-size)).current;
+  const rotate = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const anim = () => {
+      y.setValue(-size);
+      rotate.setValue(0);
+      opacity.setValue(0);
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.parallel([
+          Animated.timing(opacity, { toValue: 0.18, duration: 400, useNativeDriver: true }),
+          Animated.timing(y, { toValue: H + size, duration, useNativeDriver: true }),
+          Animated.timing(rotate, { toValue: 1, duration, useNativeDriver: true }),
+        ]),
+        Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start(() => anim());
+    };
+    anim();
+  }, []);
+
+  const spin = rotate.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        left: startX,
+        top: 0,
+        opacity,
+        transform: [{ translateY: y }, { rotate: spin }],
+      }}
+    >
+      <Svg width={size} height={size} viewBox="0 0 40 40">
+        <Circle cx="20" cy="20" r="19" fill="#ffffff" fillOpacity={0.06} stroke="#00D084" strokeWidth="1" strokeOpacity="0.3" />
+        <Polygon points="20,11 22.9,15.9 20,17.5 17.1,15.9" fill="#00D084" fillOpacity="0.4" />
+        <Path d="M20,17.5 L22.9,15.9 L25.3,20.5 L22,24 L18,24 L14.7,20.5 L17.1,15.9 Z" fill="none" stroke="#00D084" strokeWidth="0.8" strokeOpacity="0.35" />
+      </Svg>
+    </Animated.View>
+  );
+}
 
 export default function LoginScreen() {
   const { t } = useTranslation();
@@ -31,9 +80,42 @@ export default function LoginScreen() {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [emailFocused, setEmailFocused] = useState(false);
+  const [passFocused, setPassFocused] = useState(false);
+
+  const bannerY = useRef(new Animated.Value(-220)).current;
+  const bannerOpacity = useRef(new Animated.Value(0)).current;
+  const formOpacity = useRef(new Animated.Value(0)).current;
+  const formY = useRef(new Animated.Value(30)).current;
+  const btnScale = useRef(new Animated.Value(1)).current;
+  const glowAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.sequence([
+      Animated.parallel([
+        Animated.spring(bannerY, { toValue: 0, tension: 55, friction: 10, useNativeDriver: true }),
+        Animated.timing(bannerOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
+      ]),
+      Animated.parallel([
+        Animated.timing(formOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.spring(formY, { toValue: 0, tension: 60, friction: 12, useNativeDriver: true }),
+      ]),
+    ]).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, { toValue: 1, duration: 2000, useNativeDriver: true }),
+        Animated.timing(glowAnim, { toValue: 0, duration: 2000, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
 
   const handleLogin = async () => {
     if (!email.trim() || !password) return;
+    Animated.sequence([
+      Animated.timing(btnScale, { toValue: 0.96, duration: 80, useNativeDriver: true }),
+      Animated.timing(btnScale, { toValue: 1, duration: 120, useNativeDriver: true }),
+    ]).start();
     setLoading(true);
     setError('');
     if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -45,23 +127,52 @@ export default function LoginScreen() {
     }
   };
 
+  const glowOpacity = glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.06, 0.14] });
+
+  const balls = [
+    { delay: 0, startX: W * 0.08, size: 36, duration: 8000 },
+    { delay: 1800, startX: W * 0.72, size: 28, duration: 10000 },
+    { delay: 3200, startX: W * 0.44, size: 44, duration: 7000 },
+    { delay: 5000, startX: W * 0.2, size: 24, duration: 9500 },
+    { delay: 6500, startX: W * 0.84, size: 32, duration: 8500 },
+  ];
+
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
-      {/* Background glow */}
-      <View style={[styles.bgGlow, { backgroundColor: isDark ? 'rgba(0,208,132,0.06)' : 'rgba(0,168,101,0.05)' }]} />
+      {/* Animated background glow */}
+      <Animated.View
+        style={[
+          styles.bgGlow,
+          { backgroundColor: isDark ? '#00D084' : '#00A865', opacity: glowOpacity },
+        ]}
+      />
+
+      {/* Floating balls */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        {balls.map((b, i) => (
+          <FloatingBall key={i} {...b} />
+        ))}
+      </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
         <ScrollView
           contentContainerStyle={[
             styles.scroll,
-            { paddingTop: insets.top + 48, paddingBottom: insets.bottom + 24 },
+            { paddingTop: insets.top + 36, paddingBottom: insets.bottom + 28 },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Logo block */}
-          <View style={styles.logoBlock}>
-            <GoalLogo size={90} />
+          {/* Animated Logo Banner drops from top */}
+          <Animated.View
+            style={[
+              styles.logoBlock,
+              { opacity: bannerOpacity, transform: [{ translateY: bannerY }] },
+            ]}
+          >
+            <View style={[styles.logoGlow, { shadowColor: '#00D084' }]}>
+              <GoalLogo size={100} />
+            </View>
             <View style={styles.titleGroup}>
               <Text style={[styles.appName, { color: colors.text }]}>GOAL</Text>
               <View style={[styles.taglineBar, { backgroundColor: colors.accent }]} />
@@ -69,21 +180,32 @@ export default function LoginScreen() {
                 Football Predictions
               </Text>
             </View>
-          </View>
+          </Animated.View>
 
-          {/* Form */}
-          <View style={styles.form}>
-            {/* Email */}
+          {/* Form animates up */}
+          <Animated.View
+            style={[
+              styles.form,
+              { opacity: formOpacity, transform: [{ translateY: formY }] },
+            ]}
+          >
+            {/* Email field */}
             <View
               style={[
                 styles.inputWrapper,
                 {
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-                  borderColor: error ? colors.live : colors.border,
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                  borderColor: error ? colors.live : emailFocused ? colors.accent : colors.border,
+                  borderWidth: emailFocused ? 1.5 : 1,
                 },
               ]}
             >
-              <Ionicons name="mail-outline" size={18} color={colors.textMuted} style={styles.inputIcon} />
+              <Ionicons
+                name="mail-outline"
+                size={18}
+                color={emailFocused ? colors.accent : colors.textMuted}
+                style={styles.inputIcon}
+              />
               <TextInput
                 style={[styles.input, { color: colors.text }]}
                 placeholder={t('email')}
@@ -93,20 +215,28 @@ export default function LoginScreen() {
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoComplete="email"
+                onFocus={() => setEmailFocused(true)}
+                onBlur={() => setEmailFocused(false)}
               />
             </View>
 
-            {/* Password */}
+            {/* Password field */}
             <View
               style={[
                 styles.inputWrapper,
                 {
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-                  borderColor: error ? colors.live : colors.border,
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                  borderColor: error ? colors.live : passFocused ? colors.accent : colors.border,
+                  borderWidth: passFocused ? 1.5 : 1,
                 },
               ]}
             >
-              <Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} style={styles.inputIcon} />
+              <Ionicons
+                name="lock-closed-outline"
+                size={18}
+                color={passFocused ? colors.accent : colors.textMuted}
+                style={styles.inputIcon}
+              />
               <TextInput
                 style={[styles.input, { color: colors.text }]}
                 placeholder={t('password')}
@@ -115,8 +245,10 @@ export default function LoginScreen() {
                 onChangeText={setPassword}
                 secureTextEntry={!showPass}
                 autoComplete="password"
+                onFocus={() => setPassFocused(true)}
+                onBlur={() => setPassFocused(false)}
               />
-              <Pressable onPress={() => setShowPass(!showPass)} hitSlop={10}>
+              <Pressable onPress={() => setShowPass(!showPass)} hitSlop={12}>
                 <Ionicons
                   name={showPass ? 'eye-off-outline' : 'eye-outline'}
                   size={18}
@@ -139,22 +271,27 @@ export default function LoginScreen() {
               <Text style={[styles.forgotText, { color: colors.accent }]}>{t('forgotPassword')}</Text>
             </Pressable>
 
-            {/* Sign in button */}
-            <TouchableOpacity
-              style={[styles.loginBtn, { backgroundColor: colors.accent, opacity: loading ? 0.8 : 1 }]}
-              onPress={handleLogin}
-              disabled={loading}
-              activeOpacity={0.85}
-            >
-              {loading ? (
-                <ActivityIndicator color="#000" size="small" />
-              ) : (
-                <>
-                  <Ionicons name="log-in-outline" size={20} color="#000" />
-                  <Text style={styles.loginBtnText}>{t('signIn')}</Text>
-                </>
-              )}
-            </TouchableOpacity>
+            {/* Sign In button */}
+            <Animated.View style={{ transform: [{ scale: btnScale }] }}>
+              <TouchableOpacity
+                style={[styles.loginBtn, { backgroundColor: colors.accent }]}
+                onPress={handleLogin}
+                disabled={loading}
+                activeOpacity={0.88}
+              >
+                <View style={styles.loginBtnInner}>
+                  {loading ? (
+                    <ActivityIndicator color="#000" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="football-outline" size={20} color="#000" />
+                      <Text style={styles.loginBtnText}>{t('signIn')}</Text>
+                      <Ionicons name="arrow-forward" size={18} color="rgba(0,0,0,0.5)" />
+                    </>
+                  )}
+                </View>
+              </TouchableOpacity>
+            </Animated.View>
 
             {/* Divider */}
             <View style={styles.divider}>
@@ -165,17 +302,24 @@ export default function LoginScreen() {
               <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
             </View>
 
-            {/* Register */}
-            <Pressable
-              style={[styles.registerBtn, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }]}
+            {/* Register button */}
+            <TouchableOpacity
+              style={[
+                styles.registerBtn,
+                {
+                  borderColor: colors.accent,
+                  backgroundColor: isDark ? 'rgba(0,208,132,0.07)' : 'rgba(0,168,101,0.06)',
+                },
+              ]}
               onPress={() => router.push('/auth/register' as any)}
+              activeOpacity={0.8}
             >
               <Ionicons name="person-add-outline" size={18} color={colors.accent} />
-              <Text style={[styles.registerText, { color: colors.textSecondary }]}>
-                <Text style={{ color: colors.accent, fontWeight: '700' }}>{t('signUp')}</Text>
+              <Text style={[styles.registerText, { color: colors.accent }]}>
+                {t('signUp')}
               </Text>
-            </Pressable>
-          </View>
+            </TouchableOpacity>
+          </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -187,70 +331,80 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   bgGlow: {
     position: 'absolute',
-    top: 0,
-    left: '10%',
-    right: '10%',
-    height: 280,
-    borderBottomLeftRadius: 200,
-    borderBottomRightRadius: 200,
+    top: -60,
+    left: '5%',
+    right: '5%',
+    height: 320,
+    borderBottomLeftRadius: 240,
+    borderBottomRightRadius: 240,
   },
   scroll: { paddingHorizontal: 28 },
-  logoBlock: { alignItems: 'center', gap: 16, marginBottom: 48 },
-  titleGroup: { alignItems: 'center', gap: 6 },
+  logoBlock: { alignItems: 'center', gap: 18, marginBottom: 44 },
+  logoGlow: {
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 28,
+    elevation: 10,
+  },
+  titleGroup: { alignItems: 'center', gap: 8 },
   appName: {
-    fontSize: 40,
+    fontSize: 44,
     fontWeight: '900',
-    letterSpacing: 10,
+    letterSpacing: 12,
     fontFamily: 'Inter_700Bold',
-    lineHeight: 44,
+    lineHeight: 48,
   },
   taglineBar: {
-    width: 36,
-    height: 2.5,
+    width: 40,
+    height: 3,
     borderRadius: 2,
   },
   tagline: {
-    fontSize: 12,
-    letterSpacing: 3,
+    fontSize: 11,
+    letterSpacing: 3.5,
     textTransform: 'uppercase',
-    fontWeight: '500',
+    fontWeight: '600',
   },
-  form: { gap: 12 },
+  form: { gap: 13 },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
-    height: 54,
-    paddingHorizontal: 16,
+    height: 56,
+    paddingHorizontal: 18,
   },
-  inputIcon: { marginRight: 12 },
-  input: { flex: 1, fontSize: 15 },
+  inputIcon: { marginRight: 13 },
+  input: { flex: 1, fontSize: 15, fontFamily: 'Inter_400Regular' },
   errorBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 11,
   },
   errorText: { flex: 1, fontSize: 13, lineHeight: 18 },
   forgotBtn: { alignSelf: 'flex-end', paddingVertical: 2 },
-  forgotText: { fontSize: 13, fontWeight: '600' },
+  forgotText: { fontSize: 13, fontWeight: '700', letterSpacing: 0.2 },
   loginBtn: {
-    height: 56,
-    borderRadius: 16,
+    height: 58,
+    borderRadius: 18,
+    overflow: 'hidden',
+    shadowColor: '#00D084',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 18,
+    elevation: 10,
+  },
+  loginBtnInner: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    marginTop: 4,
-    shadowColor: '#00D084',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.45,
-    shadowRadius: 14,
-    elevation: 8,
+    paddingHorizontal: 20,
   },
   loginBtnText: {
     color: '#000',
@@ -258,23 +412,25 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.5,
     fontFamily: 'Inter_700Bold',
+    flex: 1,
+    textAlign: 'center',
   },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginVertical: 4,
+    marginVertical: 2,
   },
   dividerLine: { flex: 1, height: StyleSheet.hairlineWidth },
-  dividerText: { fontSize: 12 },
+  dividerText: { fontSize: 12, fontWeight: '500' },
   registerBtn: {
-    height: 54,
-    borderRadius: 16,
-    borderWidth: 1,
+    height: 56,
+    borderRadius: 18,
+    borderWidth: 1.5,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
   },
-  registerText: { fontSize: 15 },
+  registerText: { fontSize: 15, fontWeight: '700', fontFamily: 'Inter_700Bold', letterSpacing: 0.3 },
 });
