@@ -18,37 +18,67 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Path } from 'react-native-svg';
-import { GoalLogo } from '@/components/GoalLogo';
+import Svg, { Circle, Defs, LinearGradient, Path, Polygon, Rect, Stop } from 'react-native-svg';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 
-const { width: W } = Dimensions.get('window');
+const { width: W, height: H } = Dimensions.get('window');
+const ACCENT = '#00D084';
 
-function BallDecoration({ x, y, size, opacity }: { x: number; y: number; size: number; opacity: number }) {
-  const scale = useRef(new Animated.Value(0.8)).current;
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(scale, { toValue: 1.1, duration: 2200, useNativeDriver: true }),
-        Animated.timing(scale, { toValue: 0.8, duration: 2200, useNativeDriver: true }),
-      ])
-    ).start();
-  }, []);
+function Background() {
   return (
-    <Animated.View style={{ position: 'absolute', left: x, top: y, opacity, transform: [{ scale }] }}>
-      <Svg width={size} height={size} viewBox="0 0 40 40">
-        <Circle cx="20" cy="20" r="18" fill="none" stroke="#00D084" strokeWidth="1.5" strokeOpacity="0.6" />
-        <Circle cx="20" cy="20" r="10" fill="none" stroke="#00D084" strokeWidth="0.8" strokeOpacity="0.3" />
-        <Path d="M20,6 L26,14 L20,20 L14,14 Z" fill="#00D084" fillOpacity="0.15" />
-      </Svg>
-    </Animated.View>
+    <Svg width={W} height={H} style={StyleSheet.absoluteFill}>
+      <Defs>
+        <LinearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
+          <Stop offset="0%" stopColor="#060E07" />
+          <Stop offset="100%" stopColor="#081408" />
+        </LinearGradient>
+        <LinearGradient id="glow2" x1="30%" y1="0%" x2="70%" y2="60%">
+          <Stop offset="0%" stopColor="#00D084" stopOpacity="0.12" />
+          <Stop offset="100%" stopColor="#00D084" stopOpacity="0" />
+        </LinearGradient>
+      </Defs>
+      <Rect width={W} height={H} fill="url(#bg2)" />
+      <Rect width={W} height={H} fill="url(#glow2)" />
+      {/* Pitch arc */}
+      <Path
+        d={`M ${W * 0.5} ${H * -0.1} A ${W * 0.6} ${W * 0.6} 0 0 1 ${W * 1.1} ${H * 0.3}`}
+        fill="none"
+        stroke="#00D084"
+        strokeWidth={0.8}
+        strokeOpacity={0.06}
+      />
+      <Circle cx={W * 0.5} cy={H * 0.1} r={80} fill="none" stroke="#00D084" strokeWidth={0.8} strokeOpacity={0.05} />
+      {[...Array(8)].map((_, i) => (
+        <Circle key={i} cx={30 + i * W * 0.14} cy={H * 0.85} r={1.2} fill={ACCENT} fillOpacity={0.2} />
+      ))}
+    </Svg>
   );
 }
 
+function StrengthBar({ password }: { password: string }) {
+  const len = password.length;
+  const score = len === 0 ? 0 : len < 6 ? 1 : len < 10 ? 2 : len < 14 ? 3 : 4;
+  const colors = ['', '#EF4444', '#F59E0B', '#10B981', ACCENT];
+  const labels = ['', 'Très faible', 'Faible', 'Bon', 'Fort'];
+  if (len === 0) return null;
+  return (
+    <View style={sb.wrap}>
+      {[1, 2, 3, 4].map(i => (
+        <View key={i} style={[sb.bar, { backgroundColor: i <= score ? colors[score] : 'rgba(255,255,255,0.1)' }]} />
+      ))}
+      <Text style={[sb.label, { color: colors[score] }]}>{labels[score]}</Text>
+    </View>
+  );
+}
+const sb = StyleSheet.create({
+  wrap: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
+  bar: { flex: 1, height: 3, borderRadius: 2 },
+  label: { fontSize: 11, fontWeight: '600', minWidth: 60, textAlign: 'right' },
+});
+
 export default function RegisterScreen() {
   const { t } = useTranslation();
-  const { colors, isDark } = useTheme();
   const { signUp } = useAuth();
   const insets = useSafeAreaInsets();
 
@@ -58,33 +88,25 @@ export default function RegisterScreen() {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [focus, setFocus] = useState<string | null>(null);
 
-  const headerY = useRef(new Animated.Value(-40)).current;
-  const headerOpacity = useRef(new Animated.Value(0)).current;
-  const field1 = useRef(new Animated.Value(0)).current;
-  const field2 = useRef(new Animated.Value(0)).current;
-  const field3 = useRef(new Animated.Value(0)).current;
-  const btnOpacity = useRef(new Animated.Value(0)).current;
+  const cardY = useRef(new Animated.Value(50)).current;
+  const cardOp = useRef(new Animated.Value(0)).current;
+  const headerOp = useRef(new Animated.Value(0)).current;
   const btnScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Animated.stagger(80, [
-      Animated.parallel([
-        Animated.spring(headerY, { toValue: 0, tension: 60, friction: 12, useNativeDriver: true }),
-        Animated.timing(headerOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
-      ]),
-      Animated.timing(field1, { toValue: 1, duration: 300, useNativeDriver: true }),
-      Animated.timing(field2, { toValue: 1, duration: 300, useNativeDriver: true }),
-      Animated.timing(field3, { toValue: 1, duration: 300, useNativeDriver: true }),
-      Animated.timing(btnOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+    Animated.parallel([
+      Animated.timing(headerOp, { toValue: 1, duration: 400, useNativeDriver: true }),
+      Animated.spring(cardY, { toValue: 0, tension: 52, friction: 12, useNativeDriver: true }),
+      Animated.timing(cardOp, { toValue: 1, duration: 500, useNativeDriver: true }),
     ]).start();
   }, []);
 
   const handleRegister = async () => {
     if (!email || !password || !fullName) return;
     Animated.sequence([
-      Animated.timing(btnScale, { toValue: 0.96, duration: 80, useNativeDriver: true }),
+      Animated.timing(btnScale, { toValue: 0.97, duration: 80, useNativeDriver: true }),
       Animated.timing(btnScale, { toValue: 1, duration: 120, useNativeDriver: true }),
     ]).start();
     setLoading(true);
@@ -98,166 +120,139 @@ export default function RegisterScreen() {
     }
   };
 
-  const fieldStyle = (anim: Animated.Value) => ({
-    opacity: anim,
-    transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [15, 0] }) }],
-  });
+  const inputStyle = (field: string, hasError: boolean = false) => [
+    styles.inputBox,
+    {
+      borderColor: focus === field ? ACCENT : hasError ? '#EF4444' : 'rgba(255,255,255,0.1)',
+      backgroundColor: focus === field ? 'rgba(0,208,132,0.05)' : 'rgba(255,255,255,0.04)',
+    },
+  ];
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
-      {/* Decorative background balls */}
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        <BallDecoration x={-18} y={80} size={70} opacity={0.18} />
-        <BallDecoration x={W - 52} y={180} size={60} opacity={0.14} />
-        <BallDecoration x={W * 0.4} y={-20} size={50} opacity={0.1} />
-      </View>
+    <View style={styles.root}>
+      <Background />
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
         <ScrollView
-          contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 28 }]}
+          contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 40 }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           {/* Back button */}
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
-            <View style={[styles.backBtnInner, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)', borderColor: colors.border }]}>
-              <Ionicons name="arrow-back" size={20} color={colors.text} />
-            </View>
-          </TouchableOpacity>
-
-          {/* Header */}
-          <Animated.View style={[styles.header, { opacity: headerOpacity, transform: [{ translateY: headerY }] }]}>
-            <View style={styles.logoRow}>
-              <GoalLogo size={48} />
-              <View style={styles.headerText}>
-                <Text style={[styles.title, { color: colors.text }]}>{t('signUp')}</Text>
-                <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-                  Rejoins la communauté GOAL ⚽
-                </Text>
+          <Animated.View style={{ opacity: headerOp }}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
+              <View style={styles.backBtnInner}>
+                <Ionicons name="arrow-back" size={18} color="#fff" />
               </View>
-            </View>
-            <View style={[styles.headerDivider, { backgroundColor: colors.accent }]} />
+            </TouchableOpacity>
           </Animated.View>
 
-          <View style={styles.form}>
-            {/* Full Name */}
-            <Animated.View style={fieldStyle(field1)}>
-              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Nom complet</Text>
-              <View
-                style={[
-                  styles.inputWrapper,
-                  {
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                    borderColor: focusedField === 'name' ? colors.accent : colors.border,
-                    borderWidth: focusedField === 'name' ? 1.5 : 1,
-                  },
-                ]}
-              >
-                <Ionicons name="person-outline" size={18} color={focusedField === 'name' ? colors.accent : colors.textMuted} style={styles.inputIcon} />
+          {/* Page header */}
+          <Animated.View style={[styles.pageHeader, { opacity: headerOp }]}>
+            <View style={styles.headerBall}>
+              <Svg width={44} height={44} viewBox="0 0 44 44">
+                <Circle cx={22} cy={22} r={21} fill={ACCENT} fillOpacity={0.15} stroke={ACCENT} strokeWidth={1.5} strokeOpacity={0.5} />
+                <Polygon points="22,11 26,17 22,20 18,17" fill={ACCENT} fillOpacity={0.7} />
+                <Path d="M22,20 L26,17 L30,22 L27,28 L17,28 L14,22 L18,17 Z" fill="none" stroke={ACCENT} strokeWidth={1} strokeOpacity={0.6} />
+              </Svg>
+            </View>
+            <View>
+              <Text style={styles.pageTitle}>Créer un compte</Text>
+              <Text style={styles.pageSub}>Rejoins la communauté GOAL</Text>
+            </View>
+          </Animated.View>
+
+          {/* Form card */}
+          <Animated.View
+            style={[
+              styles.card,
+              { opacity: cardOp, transform: [{ translateY: cardY }] },
+            ]}
+          >
+            {/* Full name */}
+            <View style={styles.fieldWrap}>
+              <Text style={styles.fieldLabel}>Nom complet</Text>
+              <View style={inputStyle('name')}>
+                <Ionicons name="person-outline" size={17} color={focus === 'name' ? ACCENT : 'rgba(255,255,255,0.35)'} style={styles.ico} />
                 <TextInput
-                  style={[styles.input, { color: colors.text }]}
-                  placeholder={t('fullName')}
-                  placeholderTextColor={colors.textMuted}
+                  style={styles.input}
+                  placeholder="Prénom Nom"
+                  placeholderTextColor="rgba(255,255,255,0.22)"
                   value={fullName}
                   onChangeText={setFullName}
                   autoComplete="name"
-                  onFocus={() => setFocusedField('name')}
-                  onBlur={() => setFocusedField(null)}
+                  onFocus={() => setFocus('name')}
+                  onBlur={() => setFocus(null)}
                 />
+                {fullName.length > 2 && (
+                  <Ionicons name="checkmark-circle" size={16} color={ACCENT} />
+                )}
               </View>
-            </Animated.View>
+            </View>
 
             {/* Email */}
-            <Animated.View style={fieldStyle(field2)}>
-              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Email</Text>
-              <View
-                style={[
-                  styles.inputWrapper,
-                  {
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                    borderColor: focusedField === 'email' ? colors.accent : colors.border,
-                    borderWidth: focusedField === 'email' ? 1.5 : 1,
-                  },
-                ]}
-              >
-                <Ionicons name="mail-outline" size={18} color={focusedField === 'email' ? colors.accent : colors.textMuted} style={styles.inputIcon} />
+            <View style={styles.fieldWrap}>
+              <Text style={styles.fieldLabel}>Adresse email</Text>
+              <View style={inputStyle('email')}>
+                <Ionicons name="mail-outline" size={17} color={focus === 'email' ? ACCENT : 'rgba(255,255,255,0.35)'} style={styles.ico} />
                 <TextInput
-                  style={[styles.input, { color: colors.text }]}
-                  placeholder={t('email')}
-                  placeholderTextColor={colors.textMuted}
+                  style={styles.input}
+                  placeholder="vous@email.com"
+                  placeholderTextColor="rgba(255,255,255,0.22)"
                   value={email}
                   onChangeText={setEmail}
                   autoCapitalize="none"
                   keyboardType="email-address"
                   autoComplete="email"
-                  onFocus={() => setFocusedField('email')}
-                  onBlur={() => setFocusedField(null)}
+                  onFocus={() => setFocus('email')}
+                  onBlur={() => setFocus(null)}
                 />
+                {email.includes('@') && email.includes('.') && (
+                  <Ionicons name="checkmark-circle" size={16} color={ACCENT} />
+                )}
               </View>
-            </Animated.View>
+            </View>
 
             {/* Password */}
-            <Animated.View style={fieldStyle(field3)}>
-              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Mot de passe</Text>
-              <View
-                style={[
-                  styles.inputWrapper,
-                  {
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                    borderColor: focusedField === 'pass' ? colors.accent : colors.border,
-                    borderWidth: focusedField === 'pass' ? 1.5 : 1,
-                  },
-                ]}
-              >
-                <Ionicons name="lock-closed-outline" size={18} color={focusedField === 'pass' ? colors.accent : colors.textMuted} style={styles.inputIcon} />
+            <View style={styles.fieldWrap}>
+              <Text style={styles.fieldLabel}>Mot de passe</Text>
+              <View style={inputStyle('pass')}>
+                <Ionicons name="lock-closed-outline" size={17} color={focus === 'pass' ? ACCENT : 'rgba(255,255,255,0.35)'} style={styles.ico} />
                 <TextInput
-                  style={[styles.input, { color: colors.text }]}
-                  placeholder={t('password')}
-                  placeholderTextColor={colors.textMuted}
+                  style={styles.input}
+                  placeholder="Min. 8 caractères"
+                  placeholderTextColor="rgba(255,255,255,0.22)"
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPass}
-                  onFocus={() => setFocusedField('pass')}
-                  onBlur={() => setFocusedField(null)}
+                  onFocus={() => setFocus('pass')}
+                  onBlur={() => setFocus(null)}
                 />
-                <Pressable onPress={() => setShowPass(!showPass)} hitSlop={12}>
-                  <Ionicons name={showPass ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.textMuted} />
+                <Pressable onPress={() => setShowPass(v => !v)} hitSlop={12}>
+                  <Ionicons name={showPass ? 'eye-off-outline' : 'eye-outline'} size={17} color="rgba(255,255,255,0.35)" />
                 </Pressable>
               </View>
-              {password.length > 0 && (
-                <View style={styles.strengthRow}>
-                  {[0, 1, 2, 3].map(i => (
-                    <View
-                      key={i}
-                      style={[
-                        styles.strengthBar,
-                        {
-                          backgroundColor:
-                            password.length > i * 3
-                              ? password.length >= 12 ? '#00D084' : password.length >= 8 ? '#F5A623' : '#FF3B30'
-                              : isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-                        },
-                      ]}
-                    />
-                  ))}
-                  <Text style={[styles.strengthLabel, { color: colors.textMuted }]}>
-                    {password.length === 0 ? '' : password.length >= 12 ? 'Fort' : password.length >= 8 ? 'Moyen' : 'Faible'}
-                  </Text>
-                </View>
-              )}
-            </Animated.View>
+              <StrengthBar password={password} />
+            </View>
 
             {error ? (
-              <View style={[styles.errorBox, { backgroundColor: 'rgba(255,59,48,0.1)', borderColor: 'rgba(255,59,48,0.25)' }]}>
-                <Ionicons name="alert-circle-outline" size={15} color={colors.live} />
-                <Text style={[styles.errorText, { color: colors.live }]}>{error}</Text>
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle" size={14} color="#EF4444" />
+                <Text style={styles.errorText}>{error}</Text>
               </View>
             ) : null}
 
-            {/* Register button */}
-            <Animated.View style={[{ opacity: btnOpacity, transform: [{ scale: btnScale }] }, styles.btnWrap]}>
+            {/* Terms note */}
+            <Text style={styles.termsText}>
+              En créant un compte, vous acceptez nos{' '}
+              <Text style={{ color: ACCENT }}>Conditions d'utilisation</Text> et notre{' '}
+              <Text style={{ color: ACCENT }}>Politique de confidentialité</Text>.
+            </Text>
+
+            {/* CTA */}
+            <Animated.View style={{ transform: [{ scale: btnScale }] }}>
               <TouchableOpacity
-                style={[styles.registerBtn, { backgroundColor: colors.accent }]}
+                style={[styles.ctaBtn, { opacity: loading ? 0.85 : 1 }]}
                 onPress={handleRegister}
                 disabled={loading}
                 activeOpacity={0.87}
@@ -266,21 +261,22 @@ export default function RegisterScreen() {
                   <ActivityIndicator color="#000" size="small" />
                 ) : (
                   <>
-                    <Ionicons name="football-outline" size={20} color="#000" />
-                    <Text style={styles.registerBtnText}>{t('signUp')}</Text>
-                    <Ionicons name="arrow-forward" size={18} color="rgba(0,0,0,0.5)" />
+                    <Ionicons name="football-outline" size={18} color="#000" />
+                    <Text style={styles.ctaBtnText}>Créer mon compte</Text>
+                    <Ionicons name="arrow-forward" size={16} color="rgba(0,0,0,0.45)" />
                   </>
                 )}
               </TouchableOpacity>
             </Animated.View>
 
-            <TouchableOpacity onPress={() => router.back()} style={styles.loginLink} activeOpacity={0.7}>
-              <Text style={[styles.loginLinkText, { color: colors.textSecondary }]}>
-                {t('alreadyHaveAccount')}{' '}
-                <Text style={{ color: colors.accent, fontWeight: '700' }}>{t('signIn')}</Text>
+            {/* Back to login */}
+            <TouchableOpacity onPress={() => router.back()} style={styles.loginRow} activeOpacity={0.7}>
+              <Text style={styles.loginRowText}>
+                Déjà un compte ?{' '}
+                <Text style={{ color: ACCENT, fontWeight: '700' }}>Se connecter</Text>
               </Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -288,73 +284,88 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
+  root: { flex: 1, backgroundColor: '#060E07' },
   flex: { flex: 1 },
-  scroll: { paddingHorizontal: 24 },
-  backBtn: { marginBottom: 20, alignSelf: 'flex-start' },
+  scroll: { paddingHorizontal: 20, gap: 20 },
+
+  backBtn: { alignSelf: 'flex-start', marginBottom: 4 },
   backBtnInner: {
     width: 40,
     height: 40,
     borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  header: { gap: 14, marginBottom: 28 },
-  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  headerText: { gap: 4, flex: 1 },
-  title: { fontSize: 28, fontWeight: '800', fontFamily: 'Inter_700Bold' },
-  subtitle: { fontSize: 13, fontFamily: 'Inter_400Regular' },
-  headerDivider: { height: 2.5, width: 44, borderRadius: 2 },
-  form: { gap: 16 },
-  fieldLabel: { fontSize: 12, fontWeight: '600', letterSpacing: 0.5, marginBottom: -8, textTransform: 'uppercase' },
-  inputWrapper: {
+
+  pageHeader: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  headerBall: { },
+  pageTitle: { color: '#fff', fontSize: 24, fontWeight: '800', fontFamily: 'Inter_700Bold' },
+  pageSub: { color: 'rgba(255,255,255,0.4)', fontSize: 13, marginTop: 2 },
+
+  card: {
+    backgroundColor: 'rgba(12,22,14,0.88)',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(0,208,132,0.12)',
+    padding: 24,
+    gap: 16,
+  },
+
+  fieldWrap: { gap: 8 },
+  fieldLabel: { color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase' },
+  inputBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 18,
-    borderWidth: 1,
-    height: 56,
-    paddingHorizontal: 18,
+    height: 54,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    paddingHorizontal: 16,
   },
-  inputIcon: { marginRight: 13 },
-  input: { flex: 1, fontSize: 15, fontFamily: 'Inter_400Regular' },
-  strengthRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
-  strengthBar: { flex: 1, height: 3, borderRadius: 2 },
-  strengthLabel: { fontSize: 11, marginLeft: 4, minWidth: 36 },
+  ico: { marginRight: 12 },
+  input: { flex: 1, color: '#fff', fontSize: 15 },
+
   errorBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    backgroundColor: 'rgba(239,68,68,0.1)',
     borderWidth: 1,
-    borderRadius: 14,
+    borderColor: 'rgba(239,68,68,0.3)',
+    borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingVertical: 10,
   },
-  errorText: { flex: 1, fontSize: 13, lineHeight: 18 },
-  btnWrap: { marginTop: 4 },
-  registerBtn: {
-    height: 58,
-    borderRadius: 18,
+  errorText: { flex: 1, color: '#EF4444', fontSize: 13, lineHeight: 18 },
+
+  termsText: { color: 'rgba(255,255,255,0.3)', fontSize: 11, lineHeight: 16, textAlign: 'center' },
+
+  ctaBtn: {
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: ACCENT,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    shadowColor: '#00D084',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.45,
-    shadowRadius: 18,
+    shadowColor: ACCENT,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
     elevation: 10,
-    paddingHorizontal: 20,
   },
-  registerBtnText: {
+  ctaBtnText: {
+    flex: 1,
+    textAlign: 'center',
     color: '#000',
     fontSize: 16,
     fontWeight: '800',
     fontFamily: 'Inter_700Bold',
-    letterSpacing: 0.5,
-    flex: 1,
-    textAlign: 'center',
+    letterSpacing: 0.3,
   },
-  loginLink: { alignItems: 'center', paddingVertical: 8 },
-  loginLinkText: { fontSize: 14, fontFamily: 'Inter_400Regular' },
+
+  loginRow: { alignItems: 'center', paddingVertical: 4 },
+  loginRowText: { color: 'rgba(255,255,255,0.4)', fontSize: 14 },
 });
