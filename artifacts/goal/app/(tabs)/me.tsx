@@ -1,9 +1,14 @@
-import { Feather } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import React, { useState } from 'react';
+import { router } from 'expo-router';
+import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Alert,
+  Animated,
+  Dimensions,
+  Image,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -12,35 +17,103 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuth } from '@/contexts/AuthContext';
-import { useTheme } from '@/contexts/ThemeContext';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import i18n from '@/i18n';
+import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 
+const { width: W } = Dimensions.get('window');
+const COVER_H = 190;
 const APP_VERSION = '1.0.0 (build 1)';
 
-type SectionProps = {
+function CoverBackground({ isDark }: { isDark: boolean }) {
+  return (
+    <View style={{ width: W, height: COVER_H, overflow: 'hidden' }}>
+      <Svg width={W} height={COVER_H}>
+        <Defs>
+          <LinearGradient id="skyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0%" stopColor="#0A1628" />
+            <Stop offset="40%" stopColor="#112240" />
+            <Stop offset="100%" stopColor="#0D2818" />
+          </LinearGradient>
+          <LinearGradient id="glowGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+            <Stop offset="0%" stopColor="#00D084" stopOpacity="0.15" />
+            <Stop offset="100%" stopColor="#00D084" stopOpacity="0" />
+          </LinearGradient>
+        </Defs>
+        <Rect width={W} height={COVER_H} fill="url(#skyGrad)" />
+        <Rect width={W} height={COVER_H} fill="url(#glowGrad)" />
+        {/* City silhouette */}
+        {[
+          { x: 0, w: 22, h: 90 }, { x: 18, w: 18, h: 70 }, { x: 32, w: 30, h: 110 },
+          { x: 58, w: 16, h: 75 }, { x: 70, w: 25, h: 95 }, { x: 90, w: 20, h: 60 },
+          { x: 106, w: 35, h: 120 }, { x: 136, w: 18, h: 85 }, { x: 150, w: 28, h: 100 },
+          { x: 173, w: 22, h: 65 }, { x: 190, w: 40, h: 130 }, { x: 225, w: 20, h: 80 },
+          { x: 240, w: 30, h: 95 }, { x: 265, w: 18, h: 70 }, { x: 278, w: 45, h: 115 },
+          { x: 318, w: 22, h: 75 }, { x: 335, w: 28, h: 90 }, { x: 358, w: 16, h: 60 },
+          { x: 369, w: 35, h: 105 }, { x: 399, w: 20, h: 80 }, { x: 414, w: 30, h: 90 },
+        ].map((b, i) => (
+          <Rect key={i} x={b.x} y={COVER_H - b.h} width={b.w} height={b.h}
+            fill="#1A2F4A" fillOpacity={0.85} />
+        ))}
+        {/* Window lights */}
+        {[
+          [35, 50], [40, 65], [112, 40], [120, 55], [160, 45], [196, 30],
+          [210, 50], [285, 30], [295, 45], [382, 35], [390, 55],
+        ].map(([x, y], i) => (
+          <Rect key={`w${i}`} x={x} y={y} width={3} height={3}
+            fill="#FFD700" fillOpacity={Math.random() > 0.5 ? 0.9 : 0.5} />
+        ))}
+        {/* Green city glow at bottom */}
+        <Rect x={0} y={COVER_H - 60} width={W} height={60} fill="#00D084" fillOpacity={0.06} />
+      </Svg>
+    </View>
+  );
+}
+
+type AccordionSectionProps = {
   title: string;
+  icon: string;
+  iconColor: string;
   children: React.ReactNode;
   colors: any;
-  icon?: string;
-  iconColor?: string;
+  defaultOpen?: boolean;
 };
 
-function Section({ title, children, colors, icon, iconColor }: SectionProps) {
+function AccordionSection({ title, icon, iconColor, children, colors, defaultOpen = false }: AccordionSectionProps) {
+  const [open, setOpen] = useState(defaultOpen);
+  const rotateAnim = useRef(new Animated.Value(defaultOpen ? 1 : 0)).current;
+  const heightAnim = useRef(new Animated.Value(defaultOpen ? 1 : 0)).current;
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.parallel([
+      Animated.timing(rotateAnim, { toValue: next ? 1 : 0, duration: 220, useNativeDriver: true }),
+      Animated.timing(heightAnim, { toValue: next ? 1 : 0, duration: 220, useNativeDriver: false }),
+    ]).start();
+  };
+
+  const rotate = rotateAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] });
+
   return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        {icon && (
-          <View style={[styles.sectionIconWrap, { backgroundColor: (iconColor || colors.accent) + '20' }]}>
-            <Feather name={icon as any} size={13} color={iconColor || colors.accent} />
-          </View>
-        )}
-        <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>{title}</Text>
-      </View>
-      <View style={[styles.sectionCard, { backgroundColor: colors.backgroundCard, borderColor: colors.border }]}>
-        {children}
-      </View>
+    <View style={[styles.accordion, { backgroundColor: colors.backgroundCard, borderColor: colors.border }]}>
+      <TouchableOpacity onPress={toggle} style={styles.accordionHeader} activeOpacity={0.75}>
+        <View style={[styles.accordionIconWrap, { backgroundColor: iconColor + '22' }]}>
+          <Ionicons name={icon as any} size={15} color={iconColor} />
+        </View>
+        <Text style={[styles.accordionTitle, { color: colors.text }]}>{title}</Text>
+        <Animated.View style={{ transform: [{ rotate }] }}>
+          <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+        </Animated.View>
+      </TouchableOpacity>
+      {open && (
+        <View style={[styles.accordionBody, { borderTopColor: colors.border }]}>
+          {children}
+        </View>
+      )}
     </View>
   );
 }
@@ -68,7 +141,7 @@ function Row({ icon, label, sublabel, value, onPress, right, colors, iconColor, 
       activeOpacity={0.7}
     >
       <View style={[styles.rowIcon, { backgroundColor: iconBg || (iconColor || colors.accent) + '20' }]}>
-        <Feather name={icon as any} size={16} color={iconColor || colors.accent} />
+        <Ionicons name={icon as any} size={15} color={iconColor || colors.accent} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={[styles.rowLabel, { color: destructive ? colors.live : colors.text }]}>{label}</Text>
@@ -77,42 +150,45 @@ function Row({ icon, label, sublabel, value, onPress, right, colors, iconColor, 
       <View style={styles.rowRight}>
         {value ? <Text style={[styles.rowValue, { color: colors.textSecondary }]}>{value}</Text> : null}
         {right}
-        {onPress && !right ? <Feather name="chevron-right" size={15} color={colors.textMuted} /> : null}
+        {onPress && !right ? <Ionicons name="chevron-forward" size={14} color={colors.textMuted} /> : null}
       </View>
     </TouchableOpacity>
   );
 }
 
-type ThemeOptionProps = {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
+function SegmentControl({ options, selected, onSelect, colors }: {
+  options: { label: string; value: string }[];
+  selected: string;
+  onSelect: (v: string) => void;
   colors: any;
-};
-
-function ThemeOption({ label, selected, onPress, colors }: ThemeOptionProps) {
+}) {
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      style={[
-        styles.themeOpt,
-        {
-          backgroundColor: selected ? colors.accent : colors.backgroundElevated,
-          borderColor: selected ? colors.accent : colors.border,
-        },
-      ]}
-      activeOpacity={0.8}
-    >
-      <Text style={{ color: selected ? '#fff' : colors.textSecondary, fontSize: 13, fontWeight: selected ? '700' : '400' }}>
-        {label}
-      </Text>
-    </TouchableOpacity>
+    <View style={[styles.segment, { backgroundColor: colors.backgroundElevated }]}>
+      {options.map(opt => (
+        <TouchableOpacity
+          key={opt.value}
+          style={[
+            styles.segmentOption,
+            selected === opt.value && { backgroundColor: colors.accent },
+          ]}
+          onPress={() => { onSelect(opt.value); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+          activeOpacity={0.8}
+        >
+          <Text style={[
+            styles.segmentLabel,
+            { color: selected === opt.value ? '#000' : colors.textSecondary },
+          ]}>
+            {opt.label}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
   );
 }
 
 export default function MeScreen() {
   const { t } = useTranslation();
-  const { colors, mode, setMode } = useTheme();
+  const { colors, mode, isDark, setMode } = useTheme();
   const { profile, signOut } = useAuth();
   const insets = useSafeAreaInsets();
 
@@ -126,11 +202,9 @@ export default function MeScreen() {
   const [notifPromo, setNotifPromo] = useState(false);
   const [compactMode, setCompactMode] = useState(false);
   const [showPrices, setShowPrices] = useState(true);
-  const [textSize, setTextSize] = useState<'small' | 'normal' | 'large'>('normal');
+  const [textSize, setTextSize] = useState('normal');
 
-  const langLabel = i18n.language === 'fr' ? '🇫🇷 Français' : '🇬🇧 English';
-
-  const displayName = profile?.full_name || profile?.email?.split('@')[0] || 'Utilisateur';
+  const displayName = profile?.full_name || profile?.email?.split('@')[0] || t('myProfile');
 
   const handleLanguage = (lang: string) => {
     i18n.changeLanguage(lang);
@@ -152,325 +226,381 @@ export default function MeScreen() {
     ]);
   };
 
+  const sw = (val: boolean, set: (v: boolean) => void) => (
+    <Switch
+      value={val}
+      onValueChange={(v) => { set(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+      trackColor={{ false: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)', true: colors.accentDim }}
+      thumbColor={val ? colors.accent : colors.textMuted}
+      ios_backgroundColor={isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)'}
+    />
+  );
+
   return (
     <ScrollView
       style={[styles.root, { backgroundColor: colors.background }]}
-      contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 120 }]}
+      contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
       showsVerticalScrollIndicator={false}
     >
-      {/* ── Profile Header ── */}
-      <View style={[styles.profileCard, { backgroundColor: colors.backgroundCard, borderColor: colors.border }]}>
-        <View style={[styles.avatarCircle, { backgroundColor: colors.accentDim }]}>
-          <Feather name="user" size={32} color={colors.accent} />
-          {profile?.is_vip && (
-            <View style={[styles.vipBadge, { backgroundColor: colors.gold }]}>
-              <Feather name="star" size={8} color="#000" />
-            </View>
-          )}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.profileName, { color: colors.text }]}>{displayName}</Text>
-          <Text style={[styles.profileEmail, { color: colors.textSecondary }]}>{profile?.email}</Text>
-          <View style={styles.badgeRow}>
-            {profile?.is_vip && (
-              <View style={[styles.badge, { backgroundColor: colors.goldDim, borderColor: colors.gold }]}>
-                <Feather name="star" size={9} color={colors.gold} />
-                <Text style={[styles.badgeText, { color: colors.gold }]}>VIP</Text>
-              </View>
-            )}
-            {profile?.is_admin && (
-              <View style={[styles.badge, { backgroundColor: colors.accentDim, borderColor: colors.accent + '40' }]}>
-                <Feather name="shield" size={9} color={colors.accent} />
-                <Text style={[styles.badgeText, { color: colors.accent }]}>{t('admin')}</Text>
-              </View>
-            )}
-          </View>
-        </View>
-        <TouchableOpacity style={[styles.editBtn, { backgroundColor: colors.backgroundElevated, borderColor: colors.border }]}>
-          <Feather name="edit-2" size={14} color={colors.textSecondary} />
-          <Text style={[styles.editText, { color: colors.textSecondary }]}>Modifier</Text>
+      {/* ── Cover + Avatar Header ── */}
+      <View style={styles.coverWrap}>
+        <CoverBackground isDark={isDark} />
+
+        {/* Top right cover modifier button */}
+        <TouchableOpacity style={[styles.coverModifyBtn, { backgroundColor: 'rgba(0,0,0,0.55)' }]}>
+          <Ionicons name="camera-outline" size={13} color="#fff" />
+          <Text style={styles.coverModifyText}>Modifier</Text>
         </TouchableOpacity>
+
+        {/* Status bar spacer */}
+        <View style={{ height: insets.top, position: 'absolute', top: 0 }} />
       </View>
 
-      {/* ── Login / Register ── */}
-      {!profile && (
-        <TouchableOpacity
-          style={[styles.loginBtn, { backgroundColor: colors.accent }]}
-          activeOpacity={0.85}
-        >
-          <Feather name="log-in" size={16} color="#fff" />
-          <Text style={styles.loginBtnText}>Se connecter / S'inscrire</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* ── Appearance ── */}
-      <Section title="APPARENCE" colors={colors} icon="monitor" iconColor={colors.blue}>
-        {/* Theme */}
-        <View style={[styles.row, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
-          <View style={[styles.rowIcon, { backgroundColor: colors.blue + '20' }]}>
-            <Feather name="sun" size={16} color={colors.blue} />
+      {/* ── Profile section ── */}
+      <View style={[styles.profileSection, { backgroundColor: colors.background }]}>
+        {/* Avatar */}
+        <View style={styles.avatarRow}>
+          <View style={styles.avatarWrap}>
+            <View style={[styles.avatar, { backgroundColor: colors.accentDim, borderColor: colors.background }]}>
+              {profile?.avatar_url ? (
+                <Image source={{ uri: profile.avatar_url }} style={styles.avatarImg} />
+              ) : (
+                <Ionicons name="person" size={30} color={colors.accent} />
+              )}
+              {profile?.is_vip && (
+                <View style={[styles.vipBadge, { backgroundColor: '#F5A623' }]}>
+                  <Ionicons name="star" size={8} color="#000" />
+                </View>
+              )}
+            </View>
+            <TouchableOpacity style={[styles.cameraBtn, { backgroundColor: colors.accent, borderColor: colors.background }]}>
+              <Ionicons name="camera" size={12} color="#000" />
+            </TouchableOpacity>
           </View>
-          <Text style={[styles.rowLabel, { color: colors.text, flex: 1 }]}>Thème</Text>
-        </View>
-        <View style={[styles.themeRow, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
-          <ThemeOption label="Claire" selected={mode === 'light'} onPress={() => { setMode('light'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }} colors={colors} />
-          <ThemeOption label="Sombre" selected={mode === 'dark'} onPress={() => { setMode('dark'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }} colors={colors} />
-          <ThemeOption label="Système" selected={mode === 'auto'} onPress={() => { setMode('auto'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }} colors={colors} />
-        </View>
-        {/* Text size */}
-        <View style={[styles.row, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
-          <View style={[styles.rowIcon, { backgroundColor: colors.accent + '20' }]}>
-            <Feather name="type" size={16} color={colors.accent} />
-          </View>
-          <Text style={[styles.rowLabel, { color: colors.text, flex: 1 }]}>Taille du texte</Text>
-        </View>
-        <View style={[styles.themeRow, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
-          <ThemeOption label="Petite" selected={textSize === 'small'} onPress={() => setTextSize('small')} colors={colors} />
-          <ThemeOption label="Normale" selected={textSize === 'normal'} onPress={() => setTextSize('normal')} colors={colors} />
-          <ThemeOption label="Grande" selected={textSize === 'large'} onPress={() => setTextSize('large')} colors={colors} />
-        </View>
-        <Row
-          icon="layout"
-          label="Mode compact"
-          sublabel="Afficher plus de biens à la fois"
-          colors={colors}
-          iconColor="#8E44AD"
-          right={
-            <Switch
-              value={compactMode}
-              onValueChange={(v) => { setCompactMode(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-              trackColor={{ false: colors.backgroundElevated, true: colors.accentDim }}
-              thumbColor={compactMode ? colors.accent : colors.textMuted}
-            />
-          }
-        />
-        <Row
-          icon="tag"
-          label="Afficher les prix"
-          sublabel="Visible sur les cartes pronostics"
-          colors={colors}
-          iconColor="#E67E22"
-          last
-          right={
-            <Switch
-              value={showPrices}
-              onValueChange={(v) => { setShowPrices(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-              trackColor={{ false: colors.backgroundElevated, true: colors.accentDim }}
-              thumbColor={showPrices ? colors.accent : colors.textMuted}
-            />
-          }
-        />
-      </Section>
 
-      {/* ── Preferences ── */}
-      <Section title="PRÉFÉRENCES" colors={colors} icon="sliders" iconColor="#27AE60">
-        <View style={styles.langRow}>
-          <TouchableOpacity
-            style={[styles.langBtn, i18n.language === 'fr' && { borderColor: colors.accent, backgroundColor: colors.accentDim }]}
-            onPress={() => handleLanguage('fr')}
-          >
-            <Text style={{ fontSize: 18 }}>🇫🇷</Text>
-            <Text style={[styles.langLabel, { color: i18n.language === 'fr' ? colors.accent : colors.textSecondary }]}>Français</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.langBtn, i18n.language === 'en' && { borderColor: colors.accent, backgroundColor: colors.accentDim }]}
-            onPress={() => handleLanguage('en')}
-          >
-            <Text style={{ fontSize: 18 }}>🇬🇧</Text>
-            <Text style={[styles.langLabel, { color: i18n.language === 'en' ? colors.accent : colors.textSecondary }]}>English</Text>
+          {/* Edit profile button */}
+          <TouchableOpacity style={[styles.editProfileBtn, { backgroundColor: 'transparent', borderColor: colors.border }]}>
+            <Ionicons name="pencil-outline" size={13} color={colors.textSecondary} />
+            <Text style={[styles.editProfileText, { color: colors.textSecondary }]}>Modifier</Text>
           </TouchableOpacity>
         </View>
-        <Row icon="bell" label="Toutes les notifications" sublabel="Activez ou désactivez toutes les alertes" colors={colors} right={<Switch value={notifAll} onValueChange={(v) => { setNotifAll(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }} trackColor={{ false: colors.backgroundElevated, true: colors.accentDim }} thumbColor={notifAll ? colors.accent : colors.textMuted} />} />
-        <Row icon="eye" label="Demandes de visite" sublabel="Quand quelqu'un veut visiter votre bien" colors={colors} right={<Switch value={notifVisits} onValueChange={(v) => { setNotifVisits(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }} trackColor={{ false: colors.backgroundElevated, true: colors.accentDim }} thumbColor={notifVisits ? colors.accent : colors.textMuted} />} />
-        <Row icon="bar-chart-2" label="Vues sur vos biens" sublabel="Suivez vos statistiques de visibilité" colors={colors} right={<Switch value={notifViews} onValueChange={(v) => { setNotifViews(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }} trackColor={{ false: colors.backgroundElevated, true: colors.accentDim }} thumbColor={notifViews ? colors.accent : colors.textMuted} />} />
-        <Row icon="heart" label="Likes sur vos biens" sublabel="Quand quelqu'un met un cœur sur un bien" colors={colors} right={<Switch value={notifLikes} onValueChange={(v) => { setNotifLikes(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }} trackColor={{ false: colors.backgroundElevated, true: colors.accentDim }} thumbColor={notifLikes ? colors.accent : colors.textMuted} />} />
-        <Row icon="message-circle" label="Nouveaux messages" sublabel="Conversations avec des intéressés" colors={colors} right={<Switch value={notifMessages} onValueChange={(v) => { setNotifMessages(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }} trackColor={{ false: colors.backgroundElevated, true: colors.accentDim }} thumbColor={notifMessages ? colors.accent : colors.textMuted} />} />
-        <Row icon="trending-down" label="Baisses de prix" sublabel="Vos biens sauvegardés" colors={colors} right={<Switch value={notifPriceDrops} onValueChange={(v) => { setNotifPriceDrops(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }} trackColor={{ false: colors.backgroundElevated, true: colors.accentDim }} thumbColor={notifPriceDrops ? colors.accent : colors.textMuted} />} />
-        <Row icon="plus-circle" label="Nouvelles annonces" sublabel="Vos alertes sauvegardées" colors={colors} right={<Switch value={notifNewAds} onValueChange={(v) => { setNotifNewAds(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }} trackColor={{ false: colors.backgroundElevated, true: colors.accentDim }} thumbColor={notifNewAds ? colors.accent : colors.textMuted} />} />
-        <Row
-          icon="gift"
-          label="Promotions & Actualités"
-          colors={colors}
-          last
-          right={
-            <Switch
-              value={notifPromo}
-              onValueChange={(v) => { setNotifPromo(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-              trackColor={{ false: colors.backgroundElevated, true: colors.accentDim }}
-              thumbColor={notifPromo ? colors.accent : colors.textMuted}
+
+        <Text style={[styles.profileName, { color: colors.text }]}>Mon profil</Text>
+        {profile && (
+          <Text style={[styles.profileEmail, { color: colors.textSecondary }]}>{profile.email}</Text>
+        )}
+
+        {/* CTA button */}
+        {!profile ? (
+          <TouchableOpacity
+            style={[styles.loginCta, { backgroundColor: colors.accent }]}
+            onPress={() => router.push('/auth/login' as any)}
+            activeOpacity={0.87}
+          >
+            <Ionicons name="log-in-outline" size={18} color="#000" />
+            <Text style={styles.loginCtaText}>Se connecter / S'inscrire</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.badgeRow}>
+            {profile.is_vip && (
+              <View style={[styles.badge, { backgroundColor: '#F5A62320', borderColor: '#F5A623' }]}>
+                <Ionicons name="star" size={10} color="#F5A623" />
+                <Text style={[styles.badgeText, { color: '#F5A623' }]}>VIP</Text>
+              </View>
+            )}
+            {profile.is_admin && (
+              <View style={[styles.badge, { backgroundColor: colors.accentDim, borderColor: colors.accent + '60' }]}>
+                <Ionicons name="shield-checkmark-outline" size={10} color={colors.accent} />
+                <Text style={[styles.badgeText, { color: colors.accent }]}>Admin</Text>
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+
+      {/* ── Accordion Sections ── */}
+      <View style={styles.sections}>
+
+        {/* APPARENCE */}
+        <AccordionSection title="APPARENCE" icon="sunny-outline" iconColor="#3B82F6" colors={colors}>
+          {/* Theme */}
+          <View style={[styles.innerRow, { borderBottomColor: colors.border }]}>
+            <View style={[styles.rowIcon, { backgroundColor: '#3B82F620' }]}>
+              <Ionicons name="contrast-outline" size={15} color="#3B82F6" />
+            </View>
+            <Text style={[styles.rowLabel, { color: colors.text, flex: 1 }]}>Thème</Text>
+          </View>
+          <View style={[styles.innerPad, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
+            <SegmentControl
+              options={[{ label: 'Claire', value: 'light' }, { label: 'Sombre', value: 'dark' }, { label: 'Système', value: 'auto' }]}
+              selected={mode}
+              onSelect={setMode as any}
+              colors={colors}
             />
-          }
-        />
-      </Section>
+          </View>
 
-      {/* ── Support ── */}
-      <Section title="SUPPORT" colors={colors} icon="life-buoy" iconColor="#2ECC71">
-        <Row icon="help-circle" label="Centre d'aide" colors={colors} iconColor="#3498DB" onPress={() => {}} />
-        <Row icon="list" label="Questions fréquentes" colors={colors} iconColor="#9B59B6" onPress={() => {}} />
-        <Row icon="flag" label="Signaler un problème" colors={colors} iconColor="#E74C3C" onPress={() => {}} />
-        <Row icon="message-square" label="Support WhatsApp" colors={colors} iconColor="#25D366" iconBg="rgba(37,211,102,0.15)" onPress={() => {}} />
-        <Row icon="star" label="Évaluer l'app" colors={colors} iconColor="#F1C40F" last onPress={() => {}} />
-      </Section>
+          {/* Text size */}
+          <View style={[styles.innerRow, { borderBottomColor: colors.border }]}>
+            <View style={[styles.rowIcon, { backgroundColor: colors.accent + '20' }]}>
+              <Ionicons name="text-outline" size={15} color={colors.accent} />
+            </View>
+            <Text style={[styles.rowLabel, { color: colors.text, flex: 1 }]}>Taille du texte</Text>
+          </View>
+          <View style={[styles.innerPad, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
+            <SegmentControl
+              options={[{ label: 'Petite', value: 'small' }, { label: 'Normale', value: 'normal' }, { label: 'Grande', value: 'large' }]}
+              selected={textSize}
+              onSelect={setTextSize}
+              colors={colors}
+            />
+          </View>
 
-      {/* ── À propos ── */}
-      <Section title="À PROPOS" colors={colors} icon="info" iconColor={colors.textMuted}>
-        <Row icon="shield" label="Politique de confidentialité" colors={colors} iconColor="#95A5A6" onPress={() => {}} />
-        <Row icon="file-text" label="Conditions d'utilisation" colors={colors} iconColor="#95A5A6" onPress={() => {}} />
-        <Row icon="code" label="Licences open-source" colors={colors} iconColor="#95A5A6" onPress={() => {}} />
-        <Row icon="instagram" label="Nous suivre" colors={colors} iconColor="#E1306C" iconBg="rgba(225,48,108,0.12)" onPress={() => {}} />
-        <Row
-          icon="info"
-          label="Version de l'application"
-          value={APP_VERSION}
-          colors={colors}
-          iconColor={colors.textMuted}
-          last
-        />
-      </Section>
+          <Row icon="grid-outline" label="Mode compact" sublabel="Afficher plus de biens à l'écran" colors={colors} iconColor="#8B5CF6"
+            right={sw(compactMode, setCompactMode)} />
+          <Row icon="pricetag-outline" label="Afficher les prix" sublabel="Visible sur les cartes pronostics" colors={colors} iconColor="#F59E0B"
+            last right={sw(showPrices, setShowPrices)} />
+        </AccordionSection>
 
-      {/* ── Logout ── */}
-      {profile && (
-        <TouchableOpacity
-          style={[styles.logoutBtn, { backgroundColor: colors.liveDim, borderColor: colors.live }]}
-          onPress={handleLogout}
-          activeOpacity={0.8}
-        >
-          <Feather name="log-out" size={18} color={colors.live} />
-          <Text style={[styles.logoutText, { color: colors.live }]}>{t('logout')}</Text>
-        </TouchableOpacity>
-      )}
+        {/* PRÉFÉRENCES */}
+        <AccordionSection title="PRÉFÉRENCES" icon="settings-outline" iconColor="#10B981" colors={colors}>
+          {/* Language */}
+          <View style={[styles.innerPad, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
+            <View style={styles.langRow}>
+              <TouchableOpacity
+                style={[styles.langBtn, { borderColor: i18n.language === 'fr' ? colors.accent : colors.border, backgroundColor: i18n.language === 'fr' ? colors.accentDim : 'transparent' }]}
+                onPress={() => handleLanguage('fr')} activeOpacity={0.8}
+              >
+                <Text style={{ fontSize: 20 }}>🇫🇷</Text>
+                <Text style={[styles.langLabel, { color: i18n.language === 'fr' ? colors.accent : colors.textSecondary }]}>Français</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.langBtn, { borderColor: i18n.language === 'en' ? colors.accent : colors.border, backgroundColor: i18n.language === 'en' ? colors.accentDim : 'transparent' }]}
+                onPress={() => handleLanguage('en')} activeOpacity={0.8}
+              >
+                <Text style={{ fontSize: 20 }}>🇬🇧</Text>
+                <Text style={[styles.langLabel, { color: i18n.language === 'en' ? colors.accent : colors.textSecondary }]}>English</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <Row icon="notifications-outline" label="Toutes les notifications" sublabel="Activez ou désactivez toutes les alertes" colors={colors} right={sw(notifAll, setNotifAll)} />
+          <Row icon="eye-outline" label="Demandes de visite" sublabel="Quand quelqu'un veut visiter votre bien" colors={colors} iconColor="#06B6D4" right={sw(notifVisits, setNotifVisits)} />
+          <Row icon="bar-chart-outline" label="Vues sur vos biens" sublabel="Suivez vos statistiques de visibilité" colors={colors} iconColor="#8B5CF6" right={sw(notifViews, setNotifViews)} />
+          <Row icon="heart-outline" label="Likes sur vos biens" sublabel="Quand quelqu'un met un cœur" colors={colors} iconColor="#EF4444" right={sw(notifLikes, setNotifLikes)} />
+          <Row icon="chatbubble-outline" label="Nouveaux messages" sublabel="Conversations avec des intéressés" colors={colors} iconColor="#3B82F6" right={sw(notifMessages, setNotifMessages)} />
+          <Row icon="trending-down-outline" label="Baisses de prix" sublabel="Vos biens sauvegardés" colors={colors} iconColor="#F59E0B" right={sw(notifPriceDrops, setNotifPriceDrops)} />
+          <Row icon="add-circle-outline" label="Nouvelles annonces" sublabel="Vos alertes sauvegardées" colors={colors} iconColor="#10B981" right={sw(notifNewAds, setNotifNewAds)} />
+          <Row icon="gift-outline" label="Promotions & Actualités" colors={colors} iconColor="#EC4899" last right={sw(notifPromo, setNotifPromo)} />
+        </AccordionSection>
+
+        {/* SUPPORT */}
+        <AccordionSection title="SUPPORT" icon="help-circle-outline" iconColor="#10B981" colors={colors}>
+          <Row icon="headset-outline" label="Centre d'aide" colors={colors} iconColor="#3B82F6" onPress={() => {}} />
+          <Row icon="list-outline" label="Questions fréquentes" colors={colors} iconColor="#8B5CF6" onPress={() => {}} />
+          <Row icon="flag-outline" label="Signaler un problème" colors={colors} iconColor="#EF4444" onPress={() => {}} />
+          <Row icon="logo-whatsapp" label="Support WhatsApp" colors={colors} iconColor="#25D366" iconBg="rgba(37,211,102,0.12)" onPress={() => {}} />
+          <Row icon="star-outline" label="Évaluer l'app" colors={colors} iconColor="#F59E0B" last onPress={() => {}} />
+        </AccordionSection>
+
+        {/* À PROPOS */}
+        <AccordionSection title="À PROPOS" icon="information-circle-outline" iconColor="#6B7280" colors={colors}>
+          <Row icon="document-text-outline" label="Politique de confidentialité" colors={colors} iconColor="#6B7280" onPress={() => {}} />
+          <Row icon="reader-outline" label="Conditions d'utilisation" colors={colors} iconColor="#6B7280" onPress={() => {}} />
+          <Row icon="code-slash-outline" label="Licences open-source" colors={colors} iconColor="#6B7280" onPress={() => {}} />
+          <Row icon="logo-instagram" label="Nous suivre" colors={colors} iconColor="#E1306C" iconBg="rgba(225,48,108,0.1)" onPress={() => {}} />
+          <Row icon="information-circle-outline" label="Version de l'application" value={APP_VERSION} colors={colors} iconColor="#6B7280" last />
+        </AccordionSection>
+
+        {/* Logout */}
+        {profile && (
+          <TouchableOpacity
+            style={[styles.logoutBtn, { backgroundColor: 'rgba(239,68,68,0.08)', borderColor: '#EF4444' }]}
+            onPress={handleLogout}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="log-out-outline" size={18} color="#EF4444" />
+            <Text style={[styles.logoutText, { color: '#EF4444' }]}>{t('logout')}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  scroll: { paddingHorizontal: 16, gap: 12 },
-
-  profileCard: {
+  coverWrap: { position: 'relative' },
+  coverModifyBtn: {
+    position: 'absolute',
+    top: 12,
+    right: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    marginBottom: 4,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
   },
-  avatarCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+  coverModifyText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+
+  profileSection: {
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    marginTop: -24,
+  },
+  avatarRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  avatarWrap: { position: 'relative' },
+  avatar: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 3,
   },
+  avatarImg: { width: 82, height: 82, borderRadius: 41 },
   vipBadge: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
+    bottom: 2,
+    right: 2,
     width: 20,
     height: 20,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  profileName: { fontSize: 17, fontWeight: '700' },
-  profileEmail: { fontSize: 12, marginTop: 2 },
-  badgeRow: { flexDirection: 'row', gap: 6, marginTop: 5, flexWrap: 'wrap' },
-  badge: {
+  cameraBtn: {
+    position: 'absolute',
+    bottom: 0,
+    right: -2,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editProfileBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1,
+    marginBottom: 6,
   },
-  badgeText: { fontSize: 10, fontWeight: '700' },
-  editBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  editText: { fontSize: 12, fontWeight: '500' },
-
-  loginBtn: {
+  editProfileText: { fontSize: 13, fontWeight: '500' },
+  profileName: { fontSize: 24, fontWeight: '800', fontFamily: 'Inter_700Bold', marginBottom: 2 },
+  profileEmail: { fontSize: 13, marginBottom: 12 },
+  loginCta: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 14,
+    height: 52,
     borderRadius: 14,
+    marginTop: 4,
+    shadowColor: '#00D084',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  loginBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  loginCtaText: { color: '#000', fontSize: 15, fontWeight: '800', fontFamily: 'Inter_700Bold' },
+  badgeRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginTop: 4 },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  badgeText: { fontSize: 11, fontWeight: '700' },
 
-  section: { gap: 6 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 2 },
-  sectionIconWrap: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
+  sections: { paddingHorizontal: 16, gap: 10, paddingTop: 4 },
+  accordion: {
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  accordionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    gap: 12,
+  },
+  accordionIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sectionTitle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.8 },
-  sectionCard: { borderRadius: 14, borderWidth: 1, overflow: 'hidden' },
+  accordionTitle: { flex: 1, fontSize: 13, fontWeight: '700', letterSpacing: 0.6, textTransform: 'uppercase' },
+  accordionBody: { borderTopWidth: StyleSheet.hairlineWidth },
 
+  innerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  innerPad: { paddingHorizontal: 16, paddingVertical: 12 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 13,
     gap: 12,
   },
   rowIcon: {
     width: 32,
     height: 32,
-    borderRadius: 8,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },
   rowLabel: { fontSize: 14, fontWeight: '500' },
-  rowSublabel: { fontSize: 11, marginTop: 2 },
+  rowSublabel: { fontSize: 11, marginTop: 1, lineHeight: 15 },
   rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  rowValue: { fontSize: 13 },
+  rowValue: { fontSize: 12 },
 
-  themeRow: {
+  segment: {
     flexDirection: 'row',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  themeOpt: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 8,
     borderRadius: 10,
-    borderWidth: 1,
+    padding: 3,
+    gap: 2,
   },
+  segmentOption: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  segmentLabel: { fontSize: 13, fontWeight: '600' },
 
-  langRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
+  langRow: { flexDirection: 'row', gap: 10 },
   langBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 10,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'transparent',
   },
-  langLabel: { fontSize: 13, fontWeight: '500' },
+  langLabel: { fontSize: 13, fontWeight: '600' },
 
   logoutBtn: {
     flexDirection: 'row',
@@ -480,6 +610,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 14,
     borderWidth: 1,
+    marginTop: 4,
   },
   logoutText: { fontSize: 16, fontWeight: '600' },
 });
