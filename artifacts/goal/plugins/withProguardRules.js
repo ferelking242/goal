@@ -2,6 +2,24 @@ const { withDangerousMod } = require("@expo/config-plugins");
 const { promises: fs } = require("fs");
 const path = require("path");
 
+const EXPO_RULES = `
+# Keep expo-modules-core internal classes
+-keep class expo.modules.kotlin.** { *; }
+-keep class expo.modules.filesystem.** { *; }
+
+# Suppress warnings for missing expo internal classes (version mismatch with R8)
+-dontwarn expo.modules.kotlin.**
+-dontwarn expo.modules.filesystem.**
+-dontwarn expo.modules.kotlin.runtime.Runtime
+-dontwarn expo.modules.kotlin.services.FilePermissionService
+-dontwarn expo.modules.kotlin.services.FilePermissionService$Permission
+
+# Allow R8 to continue compiling when classes referenced by libraries are missing
+-ignorewarnings
+`;
+
+const MARKER = "# expo-proguard-rules-v2";
+
 const withProguardRules = (config) => {
   return withDangerousMod(config, [
     "android",
@@ -12,15 +30,15 @@ const withProguardRules = (config) => {
         "proguard-rules.pro"
       );
 
-      const extraRules = "\n# Keep expo-modules-core internal classes\n-keep class expo.modules.kotlin.** { *; }\n-keep class expo.modules.filesystem.** { *; }\n-dontwarn expo.modules.kotlin.**\n-dontwarn expo.modules.filesystem.**\n";
-
+      let existing = "";
       try {
-        const existing = await fs.readFile(proguardFile, "utf8");
-        if (!existing.includes("expo.modules.kotlin")) {
-          await fs.writeFile(proguardFile, existing + extraRules);
-        }
+        existing = await fs.readFile(proguardFile, "utf8");
       } catch (e) {
-        await fs.writeFile(proguardFile, extraRules);
+        // file doesn't exist yet
+      }
+
+      if (!existing.includes(MARKER)) {
+        await fs.writeFile(proguardFile, existing + "\n" + MARKER + EXPO_RULES);
       }
 
       return config;
